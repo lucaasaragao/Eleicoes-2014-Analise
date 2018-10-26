@@ -1,0 +1,447 @@
+---
+title: "Relação entre votos, receitas, despesas e bens de candidatos"
+author: "Lucas Aragão"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(GGally)
+library(ggplot2)
+library(here)
+library(readr)
+library(modelr)
+library(broom)
+
+
+options(OutDec = ",")
+```
+
+```{r carrega dados, include=FALSE}
+despesas <- here("dados", "despesas_candidatos_2014_PB.txt") %>%
+  read_delim(";", locale = locale(encoding = "latin1", decimal_mark = ","))
+
+receitas <- here("dados", "receitas_candidatos_2014_PB.txt") %>%
+  read_delim(";", locale = locale(encoding = "latin1", decimal_mark = ","))
+
+bens <- here("dados", "bem_candidato_2014_PB.csv") %>%
+  read_delim(";", locale = locale(encoding = "latin1", decimal_mark = ","))
+
+votacao <- here("dados", "votacao_candidato_munzona_2014_PB.txt") %>%
+  read_delim(";", locale = locale(encoding = "latin1", decimal_mark = ","),
+             col_names = c(
+    "DT_GERACAO", "HH_GERACAO", "ANO_ELEICAO", "NUM_TURNO", "DESC_ELEICAO",
+    "SIGLA_UF", "SIGLA_UE", "COD_MUNICIPIO", "NM_MUNICIPIO", "NR_ZONA",
+    "COD_CARGO", "NR_CANDIDATO", "SQ_CANDIDATO", "NM_CANDIDATO",
+    "NM_URNA_CANDIDATO", "DESC_CARGO", "COD_SIT_CAND_SUPERIOR",
+    "DESC_SIT_CAND_SUPERIOR", "COD_SIT_CANDIDATO", "DESC_SIT_CANDIDATO",
+    "COD_SID_CAND_TOT", "DESC_SIT_CAND_TOT", "NR_PARTIDO", "SIGLA_PARTIDO",
+    "NM_PARTIDO", "SEQ_LEGENDA", "NM_COLIGACAO", "COMPOSICAO_LEGENDA",
+    "TOTAL_VOTOS", "TRANSITO"
+    ))
+```
+
+
+```{r agrega dados, include = FALSE}
+total_despesas <- despesas %>%
+  group_by(`Sequencial Candidato`) %>%
+  summarise(`Total despesas` = sum(`Valor despesa`))
+
+total_receitas <- receitas %>%
+  group_by(`Sequencial Candidato`) %>%
+  summarise(`Total receitas` = sum(`Valor receita`))
+
+total_bens <- bens %>%
+  group_by(`Sequencial Candidato` = SQ_CANDIDATO) %>%
+  summarise(`Total bens` = sum(VR_BEM_CANDIDATO))
+
+total_votos <- votacao %>%
+  group_by(Cargo = DESC_CARGO,
+           `Sigla Partido` = SIGLA_PARTIDO,
+           `Sequencial Candidato` = SQ_CANDIDATO,
+           `Numero candidato` = NR_CANDIDATO,
+           `Nome candidato` = NM_CANDIDATO,
+           Turno = NUM_TURNO) %>%
+  summarise(Situacao = first(DESC_SIT_CAND_TOT),
+            `Total votos` = sum(TOTAL_VOTOS, na.rm = TRUE))
+  
+dados_candidatos <- total_votos %>%
+  left_join(total_despesas) %>%
+  left_join(total_receitas) %>%
+  left_join(total_bens) %>%
+  ungroup()
+```
+
+## Olá bem vindo a mais uma analise, hoje iremos analizar os dados das ultimas eleições, com uma analise mais profundar e tentar prever algumas situações com o uso da estatisca para isso.
+
+# Primeiro vamos filtrar os dados
+
+```{r filtra dados}
+# Filtre apenas o cargo que você está interessado em analisar. Exemplo:
+dados_candidatos <- dados_candidatos %>%
+  filter(Cargo == "DEPUTADO FEDERAL")
+
+dados_candidatos
+```
+
+
+# Análise exploratória
+
+Inicialmente, vamos levantar alguns dados para explorar melhor nossa base de dados.
+
+
+#Mais votados e Menos Votados
+
+Quem será que foi o deputado federal mais votado da Paraiba ? 
+
+```{r}
+dados_candidatos%>%
+top_n(1, `Total votos`)
+```
+
+
+E o menos votados, tivemos algum deputador com o número de votos igual a 0 ? 
+surpreendentemente ...
+```{r}
+dados_candidatos%>%
+top_n(-1, `Total votos`)
+
+```
+
+
+#Mais despesas e menos despesas
+
+Você sabe qual o deputado federal com mais despesas ? 
+```{r}
+dados_candidatos%>%
+top_n(1, `Total despesas`)
+```
+
+E qual o deputado federal com menos despesas ? 
+```{r}
+dados_candidatos%>%
+top_n(-1, `Total despesas`)
+
+```
+
+Sege abaixo um gráfico de depesas que os cadidatos declararam.
+Podemos ver que a maioria dos candidatos declararam o valor de despesas abaixo de 500.000 R$
+```{r}
+
+ggplot(dados_candidatos, aes(`Total despesas`)) +
+geom_histogram()
+
+```
+
+
+#Candidatos com mais e menos Bens declarados
+
+Alguns candidatos e seus bens ...
+
+Candidato com maior quantidade de bens declarados
+```{r}
+dados_candidatos %>%
+  top_n(1, `Total bens`)
+
+```
+
+E o que menos declarou bens ...
+```{r}
+dados_candidatos %>%
+  top_n(-1, `Total bens`)
+```
+
+Aqui abaixo você pode viazualizar um grafico do total de bens declarados pelos candidatos.
+
+```{r}
+ggplot(dados_candidatos, aes(x=`Total bens`)) +
+geom_histogram()
+```
+
+
+Abaixo temos um grafico de violino, ele é caracterizado por representar a maior concentração de dados ...
+  
+```{r}
+dados_candidatos%>%
+    ggplot(aes(x=`Total bens`, y= `Total votos`)) +
+  geom_violin() +
+  geom_point(position = position_jitter(width = 0.1)) 
+```
+
+
+#Partidos 
+
+
+Alguns dados dos partidos mais comuns na PB 
+
+
+PT
+```{r}
+dados_candidatos %>%
+  filter(`Sigla Partido` == "PT") 
+```
+
+PSBD
+```{r}
+
+dados_candidatos%>%
+filter(`Sigla Partido` == "PSDB")
+
+```
+
+DEM
+```{r}
+dados_candidatos%>%
+filter(`Sigla Partido` == "DEM")
+
+```
+
+PMDB
+```{r}
+dados_candidatos %>%
+  filter(`Sigla Partido` == "PMDB")
+```
+
+PSOL
+```{r}
+dados_candidatos %>%
+  filter(`Sigla Partido` == "PSOL")
+```
+
+# Análise das relações entre variáveis
+
+Atraves da tecnica de Regreção vamos analisar algumas variaveis isoladas e como uma pode influenciar a outra. 
+
+Primeiro vamos começar com uma regreção simples 
+
+
+Esse gráfico abaixo representa a crescente dos totais de votos pela despesas dos candidatos.
+```{r}
+ggplot(dados_candidatos, aes(x = `Total votos`, y = `Total despesas`)) + 
+  geom_point(alpha = 0.4) + geom_smooth(method = "lm", se = FALSE)
+```
+
+Esse grafico no permite dizer que, quanto menor as despesas, menor a quantidade de votos.
+
+
+Vamos analisar agora o total de votos pelos total de bens dos cadidatos
+```{r}
+ggplot(dados_candidatos, aes(x = `Total votos`, y = `Total bens`)) + 
+  geom_point(alpha = 0.4) + geom_smooth(method = "lm", se = FALSE)
+
+```
+Percebemos uma aglomeração, de dados abaixo de 50.000 mil votos, em cadidatos que declararam uma menor renda.
+Mas será que quanto precisa gastar um cadidato para ser eleito ?
+
+
+Abaixo temos o gráfico feito atraves do Total de Votos X Total de Receita 
+```{r}
+ggplot(dados_candidatos, aes(x = `Total votos`, y = `Total receitas`)) + 
+  geom_point(alpha = 0.4) + geom_smooth(method = "lm", se = FALSE)
+```
+
+
+
+#Eleito, Ñ eleito, Suplente
+
+Abaixo vemos um grafico de votação da Paraiba. 
+
+```{r}
+ggplot(dados_candidatos, aes(x= `Total votos`, y= `Situacao`))+
+  geom_point(alpha=0.4) + geom_smooth(method = "lm", se=FALSE)
+```
+Podemos concluir que para um cadidato seja eleito o mesmo tem que ter em média mais de 50 mil votos. 
+Porém se olharmos com atenção, vemos que o número de suplente chega próximo ao número de eleitos por média, isso acorre pelas legendas dos candidatos, onde as mesmas puxam um determinado candidato pelo número de votos.
+
+
+
+
+
+#Regressão
+
+Mas será que estamos analizado de maneira correta e se sim nossa analize está eficiente para o contextu atual.
+
+Utilizando a tecnica de regressão, podemos ver uma crescente quando queremos analizar o Total de votos pelo total de despesas.
+Para isso usamos o Modelo Linear responsavel por traçar uma reta (ou um semi reta) como forma de mostrar uma tendencia.
+```{r}
+modelo <- lm(`Total votos` ~ `Total despesas`, data = dados_candidatos)
+  
+  summary(modelo)
+  confint(modelo)
+  
+  tidy(modelo, confint= TRUE)
+  glance(modelo)
+  
+  dados_candidatos %>%
+    add_predictions(model = modelo) %>%
+    ggplot(mapping = aes(x = `Total despesas`, y= `Total votos`)) +
+    geom_point(alpha = 0.5, size = .8) + 
+    geom_line(aes(y = pred), colour = "blue")
+  
+```
+Nessa analise com essas variaveis obtivemos um r² de 0,71, uma boa analise.
+
+
+
+
+
+
+
+O mesmo foi usado para analisamos o total de votos atraves do total de receitas, e o resultado ... 
+
+```{r}
+modelo <- lm(`Total votos` ~ `Total receitas`, data = dados_candidatos)
+  
+  summary(modelo)
+  confint(modelo)
+  
+  tidy(modelo, confint= TRUE)
+  glance(modelo)
+  
+  dados_candidatos %>%
+    add_predictions(model = modelo) %>%
+    ggplot(mapping = aes(x = `Total receitas`, y= `Total votos`)) +
+    geom_point(alpha = 0.5, size = .8) + 
+    geom_line(aes(y = pred), colour = "blue")
+  
+
+```
+Nessa analise com essas variaveis obtivemos um r² de 0,71, uma boa analise. 
+
+
+```{r}
+modelo <- lm(`Total votos` ~ `Total bens`, data = dados_candidatos)
+  
+  summary(modelo)
+  confint(modelo)
+  
+  tidy(modelo, confint= TRUE)
+  glance(modelo)
+  
+  dados_candidatos %>%
+    add_predictions(model = modelo) %>%
+    ggplot(mapping = aes(x = `Total bens`, y= `Total votos`)) +
+    geom_point(alpha = 0.5, size = .8) + 
+    geom_line(aes(y = pred), colour = "blue")
+  
+```
+
+Nessa analise com essas variaveis obtivemos um r² de 0,27 
+
+
+
+
+
+
+#Analise Deputados Federais em PE
+
+```{r carrega dados2, include=FALSE}
+despesas2 <- here("dados", "despesas_candidatos_2014_PE.txt") %>%
+  read_delim(";", locale = locale(encoding = "latin1", decimal_mark = ","))
+
+receitas2 <- here("dados", "receitas_candidatos_2014_PE.txt") %>%
+  read_delim(";", locale = locale(encoding = "latin1", decimal_mark = ","))
+
+bens2 <- here("dados", "bem_candidato_2014_PE.csv") %>%
+  read_delim(";", locale = locale(encoding = "latin1", decimal_mark = ","))
+
+votacao2 <- here("dados", "votacao_candidato_munzona_2014_PE.txt") %>%
+  read_delim(";", locale = locale(encoding = "latin1", decimal_mark = ","),
+             col_names = c(
+    "DT_GERACAO", "HH_GERACAO", "ANO_ELEICAO", "NUM_TURNO", "DESC_ELEICAO",
+    "SIGLA_UF", "SIGLA_UE", "COD_MUNICIPIO", "NM_MUNICIPIO", "NR_ZONA",
+    "COD_CARGO", "NR_CANDIDATO", "SQ_CANDIDATO", "NM_CANDIDATO",
+    "NM_URNA_CANDIDATO", "DESC_CARGO", "COD_SIT_CAND_SUPERIOR",
+    "DESC_SIT_CAND_SUPERIOR", "COD_SIT_CANDIDATO", "DESC_SIT_CANDIDATO",
+    "COD_SID_CAND_TOT", "DESC_SIT_CAND_TOT", "NR_PARTIDO", "SIGLA_PARTIDO",
+    "NM_PARTIDO", "SEQ_LEGENDA", "NM_COLIGACAO", "COMPOSICAO_LEGENDA",
+    "TOTAL_VOTOS", "TRANSITO"
+    ))
+```
+
+
+```{r agrega dados2, include = FALSE}
+total_despesas2 <- despesas2 %>%
+  group_by(`Sequencial Candidato`) %>%
+  summarise(`Total despesas` = sum(`Valor despesa`))
+
+total_receitas2 <- receitas2 %>%
+  group_by(`Sequencial Candidato`) %>%
+  summarise(`Total receitas` = sum(`Valor receita`))
+
+total_bens2 <- bens2 %>%
+  group_by(`Sequencial Candidato` = SQ_CANDIDATO) %>%
+  summarise(`Total bens` = sum(VR_BEM_CANDIDATO))
+
+total_votos2 <- votacao2 %>%
+  group_by(Cargo = DESC_CARGO,
+           `Sigla Partido` = SIGLA_PARTIDO,
+           `Sequencial Candidato` = SQ_CANDIDATO,
+           `Numero candidato` = NR_CANDIDATO,
+           `Nome candidato` = NM_CANDIDATO,
+           Turno = NUM_TURNO) %>%
+  summarise(Situacao = first(DESC_SIT_CAND_TOT),
+            `Total votos` = sum(TOTAL_VOTOS, na.rm = TRUE))
+  
+dados_candidatos2 <- total_votos2 %>%
+  left_join(total_despesas) %>%
+  left_join(total_receitas) %>%
+  left_join(total_bens) %>%
+  ungroup()
+```
+
+
+```{r filtra dados2}
+# Filtre apenas o cargo que você está interessado em analisar. Exemplo:
+dados_candidatos2 <- dados_candidatos2 %>%
+  filter(Cargo == "DEPUTADO FEDERAL")
+
+dados_candidatos2
+```
+
+#Analise Exploratoria PE
+
+Vamos fazer algumas analises exploratorias ...
+
+
+Deputado federal mais votado
+```{r}
+dados_candidatos2%>%
+  top_n(1, `Total votos`)
+```
+
+
+Deputados federal menos votado
+
+```{r}
+dados_candidatos2%>%
+  top_n(-1, `Total votos`)
+```
+
+
+Deputado com maior numero de despesa ...
+```{r}
+dados_candidatos2 %>%
+  top_n(1, `Total bens`)
+```
+
+
+Deputado com o menor número de despesas ...
+```{r}
+dados_candidatos2 %>%
+  top_n(-1, `Total despesas`)
+```
+
+
+# Exemplos de perguntas a responder:
+
+- Quanto um candidato deve gastar no mínimo (despesa) para ter mais chance de ser eleito?
+- Quanto um candidato deve arrecadar no mínimo (receita) para ter mais chance de ser eleito?
+- Quanto de bens um candidato deve ter no mínimo para ter mais chance de ser eleito?
+- Existe alguma combinação de variáveis que explica bem a quantidade de dados que um candidato recebe?
+- Considere um candidato fictício que recebeu 100 mil reais de receita na campanha. Qual a previsão de votos que ele deve receber? É provável que ele seja eleito?
+- Considere um candidato fictício que gastou 100 mil reais de despesa na campanha e possui 1 milhão de reais em bens. Qual a previsão de votos que ele deve receber? É provável que ele seja eleito?
